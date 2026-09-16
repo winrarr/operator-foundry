@@ -1,0 +1,73 @@
+{{- $image := printf "%s:%s" .Values.image.repository (default .Chart.AppVersion .Values.image.tag) -}}
+{{- if .Values.image.digest }}{{- $image = printf "%s@%s" .Values.image.repository .Values.image.digest }}{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "operator-foundry.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "operator-foundry.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "operator-foundry.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+{{ include "operator-foundry.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "operator-foundry.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+{{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+{{ toYaml . | nindent 8 }}
+{{- end }}
+      containers:
+      - name: manager
+        image: {{ $image | quote }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: [/manager]
+        args:
+        - --health-probe-bind-address={{ .Values.healthProbeBindAddress }}
+        - --enable-http2={{ .Values.enableHTTP2 }}
+{{- if .Values.leaderElection }}
+        - --leader-elect=true
+{{- end }}
+{{- if .Values.metrics.enabled }}
+        - --metrics-bind-address=:{{ .Values.metrics.port }}
+{{- else }}
+        - --metrics-bind-address=0
+{{- end }}
+        ports:
+        - name: health
+          containerPort: 8081
+          protocol: TCP
+{{- if .Values.metrics.enabled }}
+        - name: metrics
+          containerPort: {{ .Values.metrics.port }}
+          protocol: TCP
+{{- end }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        resources:
+{{ toYaml .Values.resources | nindent 10 }}

@@ -1,0 +1,28 @@
+# Binaries and local build output
+bin/
+dist/
+site/
+cover.out
+*.test
+
+# Local tools and caches
+.cache/
+.tmp/
+hack/*.tmp.*
+go.work
+
+# Kubernetes and local environment state
+*.kubeconfig
+/kind-*.yaml
+*.token
+*.secret
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Generated API output is committed when it is part of the reference pattern.
+# Local generated files are protected by the Makefile drift check.

@@ -1,0 +1,18 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "operator-foundry.fullname" . }}-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "operator-foundry.labels" . | nindent 4 }}
+spec:
+  ports:
+  - name: https
+    port: {{ .Values.metrics.port }}
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "operator-foundry.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

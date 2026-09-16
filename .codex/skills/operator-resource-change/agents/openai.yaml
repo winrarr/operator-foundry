@@ -1,0 +1,4 @@
+interface:
+  display_name: "Operator Resource Change"
+  short_description: "Change an external-system resource end to end."
+  default_prompt: "Use $operator-resource-change to implement an external-system resource change end to end."

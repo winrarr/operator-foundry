@@ -1,0 +1,4 @@
+interface:
+  display_name: "Operator Research"
+  short_description: "Research an external system before operator design."
+  default_prompt: "Use $operator-research to research the external system and comparable implementations before designing the operator."

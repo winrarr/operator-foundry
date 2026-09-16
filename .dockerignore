@@ -1,0 +1,11 @@
+.git
+.github
+.cache
+.tmp
+bin
+dist
+site
+cover.out
+*.kubeconfig
+*.token
+*.secret
