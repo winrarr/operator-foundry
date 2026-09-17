@@ -40,7 +40,7 @@ type PatternResourceReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=patterns.operator-foundry.example,resources=patternresources,verbs=get;list;watch
+// +kubebuilder:rbac:groups=patterns.operator-foundry.example,resources=patternresources,verbs=get;list;watch;update
 // +kubebuilder:rbac:groups=patterns.operator-foundry.example,resources=patternresources/finalizers,verbs=update
 // +kubebuilder:rbac:groups=patterns.operator-foundry.example,resources=patternresources/status,verbs=get;patch;update
 // +kubebuilder:rbac:groups=patterns.operator-foundry.example,resources=patternconnections,verbs=get;list;watch

@@ -17,11 +17,14 @@ The example API and controllers in this repository are reference material. Keep 
 - connection and Secret-reference handling;
 - adoption, orphaning, deletion, finalizers, and drift detection;
 - dependency readiness and reconciliation retries;
-- fake-client and HTTP contract tests;
+- fake-client, HTTP contract, and in-cluster operational tests;
 - generated CRDs, RBAC, API reference documentation, Helm, and Kustomize;
-- strict documentation validation and GitHub Pages publication.
+- strict documentation validation and GitHub Pages publication;
+- a disposable mock external API and Kind golden-path E2E matrix.
 
 The lifecycle patterns are intentionally demonstrated because they are useful for most external-system operators, but every new operator must validate their semantics and scope before adopting them.
+
+The reference E2E is the confidence path for this repository. It installs the operator into Kind, drives the example resources against the disposable mock API, and checks the observable lifecycle. The optional Cilium mode additionally checks Hubble readiness and a metrics NetworkPolicy allow/deny boundary.
 
 ## Local development
 

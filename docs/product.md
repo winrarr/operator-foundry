@@ -4,4 +4,4 @@ Operator Foundry provides a strong starting point for building Kubernetes operat
 
 The repository should make a new operator easy to start while preserving room for ambitious full-product goals. The reference patterns are intentionally concrete so that an agent can copy techniques, compare alternatives, and adapt them to the semantics of the new external system.
 
-The first useful slice of this repository is the shared foundation, pattern catalog, and kickoff workflow. A later slice may improve the reference examples or add narrowly targeted automation when repeated projects demonstrate a real need.
+The immediate confidence goal is that the reference examples work together as a complete operator: the controller, typed client, lifecycle behavior, installation assets, and documentation should be exercised by unit, contract, operational, and Kind tests. The golden path should remain small enough to understand and strong enough to expose broken conventions before they are copied into a new operator.

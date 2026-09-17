@@ -17,7 +17,6 @@ rules:
   - patterns.operator-foundry.example
   resources:
   - patternconnections
-  - patternresources
   verbs:
   - get
   - list
@@ -31,6 +30,15 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - patterns.operator-foundry.example
+  resources:
+  - patternresources
+  verbs:
+  - get
+  - list
+  - update
+  - watch
 - apiGroups:
   - patterns.operator-foundry.example
   resources:

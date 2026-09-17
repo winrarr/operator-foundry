@@ -7,12 +7,14 @@ LOCALBIN ?= $(PROJECT_DIR)/bin
 PROJECT_NAME ?= operator-foundry
 CHART_DIR ?= charts/operator-foundry
 IMG ?= ghcr.io/winrarr/operator-foundry:dev
+MOCK_API_IMG ?= ghcr.io/winrarr/operator-foundry-mock-api:dev
 OPERATOR_NAMESPACE ?= operator-foundry-system
 KIND_CLUSTER ?= operator-foundry
 KIND_CNI ?= default
 KIND_NODE_IMAGE ?= kindest/node:v1.37.0
 CILIUM_VERSION ?= 1.20.1
 E2E_TEST_NAMESPACE ?= operator-foundry-e2e
+CURL_TEST_IMAGE ?= curlimages/curl:8.12.1
 CONTAINER_TOOL ?= docker
 DOCKER_BUILD_CACHE_ARGS ?=
 DOCS_CONTAINER_IMAGE ?= zensical/zensical:0.0.59
@@ -149,6 +151,10 @@ run: manifests generate ## Run the controller against the current kubeconfig con
 docker-build: ## Build the operator image.
 	$(CONTAINER_TOOL) buildx build --load $(DOCKER_BUILD_CACHE_ARGS) --provenance=false --sbom=false --tag $(IMG) .
 
+.PHONY: docker-build-mock-api
+docker-build-mock-api: ## Build the disposable external API fixture image.
+	$(CONTAINER_TOOL) buildx build --load $(DOCKER_BUILD_CACHE_ARGS) --provenance=false --sbom=false --target mock-api-runtime --tag $(MOCK_API_IMG) .
+
 .PHONY: docker-buildx
 docker-buildx: ## Build and push a multi-platform operator image.
 	$(CONTAINER_TOOL) buildx build --platform=$(PLATFORMS) --tag $(IMG) --push .
@@ -242,8 +248,9 @@ kind-install-cilium: ## Install Cilium with Hubble into the Kind cluster.
 		--wait --timeout=10m
 
 .PHONY: kind-load-image
-kind-load-image: kind-create docker-build ## Build and load the operator image into Kind.
+kind-load-image: kind-create docker-build docker-build-mock-api ## Build and load the operator and mock API images into Kind.
 	"$(KIND)" load docker-image "$(IMG)" --name "$(KIND_CLUSTER)"
+	"$(KIND)" load docker-image "$(MOCK_API_IMG)" --name "$(KIND_CLUSTER)"
 
 .PHONY: kind-deploy
 kind-deploy: kind-up kind-load-image ## Install the operator chart into Kind.
@@ -251,7 +258,7 @@ kind-deploy: kind-up kind-load-image ## Install the operator chart into Kind.
 
 .PHONY: kind-e2e
 kind-e2e: kind-deploy ## Spin up Kind, install the operator, and run cluster E2E checks.
-	KIND_CLUSTER="$(KIND_CLUSTER)" KIND_CNI="$(KIND_CNI)" OPERATOR_NAMESPACE="$(OPERATOR_NAMESPACE)" E2E_TEST_NAMESPACE="$(E2E_TEST_NAMESPACE)" KUBECTL="$(KUBECTL)" ./hack/e2e-kind.sh
+	KIND_CLUSTER="$(KIND_CLUSTER)" KIND_CNI="$(KIND_CNI)" PROJECT_NAME="$(PROJECT_NAME)" OPERATOR_NAMESPACE="$(OPERATOR_NAMESPACE)" E2E_TEST_NAMESPACE="$(E2E_TEST_NAMESPACE)" MOCK_API_IMG="$(MOCK_API_IMG)" CURL_TEST_IMAGE="$(CURL_TEST_IMAGE)" KUBECTL="$(KUBECTL)" ./hack/e2e-kind.sh
 
 .PHONY: kind-refresh
 kind-refresh: docker-build kind-load-image ## Rebuild and restart the operator in Kind.

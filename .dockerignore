@@ -1,6 +1,9 @@
 .git
 .github
 .cache
+site
+bin
+cover.out
 .tmp
 bin
 dist
