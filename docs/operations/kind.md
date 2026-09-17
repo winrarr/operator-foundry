@@ -7,14 +7,26 @@ make kind-e2e
 make kind-down
 ```
 
-To exercise Cilium and Hubble, recreate the cluster with the optional Cilium path:
+To exercise Cilium and Hubble locally, recreate the cluster with the optional
+Cilium path:
 
 ```sh
-KIND_CNI=cilium make kind-e2e
+KIND_CNI=cilium make kind-deploy-e2e
 KIND_CNI=cilium make kind-hubble-check
 make kind-down
 ```
 
-The Cilium configuration disables Kind's default CNI, installs the pinned Cilium chart, and enables Hubble Relay. A cluster must be deleted before switching between CNI modes because the CNI is selected during cluster creation.
+The Cilium configuration disables Kind's default CNI, installs the pinned
+Cilium chart, and enables Hubble Relay. A cluster must be deleted before
+switching between CNI modes because the CNI is selected during cluster
+creation. See [Kind and network-policy validation](../patterns/kind-and-network-policy.md)
+for the Hubble dropped-flow loop used to discover policy requirements.
 
-The E2E script builds and loads both the operator and a disposable mock external API. It proves cluster creation, CRD installation, Helm installation, deployment rollout, dependency handling, create/update/adopt/recreate behavior, failure recovery, Delete and Orphan semantics, and an observable reconciliation state. Add operator-specific live behavior there only when fake-client or HTTP contract tests cannot prove it. For NetworkPolicy work, pair the policy with traffic assertions and Hubble observations; component readiness alone is not a policy test.
+The E2E script builds and loads both the operator and a disposable mock external
+API. It proves cluster creation, CRD installation, Helm installation,
+deployment rollout, dependency handling, create/update/adopt/recreate
+behavior, failure recovery, Delete and Orphan semantics, and an observable
+reconciliation state. Add operator-specific live behavior there only when
+fake-client or HTTP contract tests cannot prove it. The GitHub Actions workflow
+uses the default CNI; Cilium is a local diagnostic path because the CNI should
+not affect the operator.

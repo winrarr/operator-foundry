@@ -11,6 +11,7 @@ These stories describe the people and workflows the foundation should support. T
 - As an operator author, I want lifecycle, status, dependency, authentication, and ownership patterns available for deliberate reuse.
 - As an operator author, I want fast unit, HTTP contract, and reconciliation tests plus a disposable Kind E2E path for behavior that requires a real cluster.
 - As an operator author, I want to switch between Kind's default CNI and an optional Cilium/Hubble setup when documenting or testing NetworkPolicy behavior.
+- As an operator author, I want to apply temporary default-deny rules and use Hubble's dropped flows to derive the smallest native and Cilium network policies that permit the operator's representative workflows.
 - As a release maintainer, I want an optional dependency-only patch-train pattern that can be reviewed and enabled when the repository's release policy is ready.
 
 ## Future stories

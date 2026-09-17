@@ -6,4 +6,5 @@ processor:
     - "TypeMeta$"
     - "ObjectMeta$"
 render:
-  kubernetesVersion: "1.34"
+# renovate: datasource=go depName=k8s.io/api
+  kubernetesVersion: "1.37"

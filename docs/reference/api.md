@@ -83,7 +83,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `patterns.operator-foundry.example/v1alpha1` | | |
 | `kind` _string_ | `PatternConnection` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.34/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `spec` _[PatternConnectionSpec](#patternconnectionspec)_ |  |  |  |
 
 
@@ -102,7 +102,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `endpoint` _string_ | Endpoint is the external API base URL. |  | Pattern: `^https?://` <br /> |
 | `authSecretRef` _[SecretKeyReference](#secretkeyreference)_ | AuthSecretRef references a same-namespace Secret containing the bearer token. |  |  |
-| `requestTimeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.34/#duration-v1-meta)_ | RequestTimeout bounds each external API request. |  | Optional: \{\} <br /> |
+| `requestTimeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | RequestTimeout bounds each external API request. |  | Optional: \{\} <br /> |
 
 
 #### PatternResource
@@ -119,7 +119,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `patterns.operator-foundry.example/v1alpha1` | | |
 | `kind` _string_ | `PatternResource` | | |
-| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.34/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `spec` _[PatternResourceSpec](#patternresourcespec)_ |  |  |  |
 
 
@@ -141,7 +141,7 @@ _Appears in:_
 | `value` _string_ | Value is the desired external value. |  |  |
 | `creationPolicy` _[CreationPolicy](#creationpolicy)_ | CreationPolicy controls create versus adoption behavior.<br />Defaults to Create. |  | Enum: [Create Adopt CreateOrAdopt] <br />Optional: \{\} <br /> |
 | `deletionPolicy` _[DeletionPolicy](#deletionpolicy)_ | DeletionPolicy controls whether deleting this object deletes its external resource.<br />Defaults to Orphan. |  | Enum: [Delete Orphan] <br />Optional: \{\} <br /> |
-| `driftDetectionInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.34/#duration-v1-meta)_ | DriftDetectionInterval controls periodic external observations. |  | Optional: \{\} <br /> |
+| `driftDetectionInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | DriftDetectionInterval controls periodic external observations. |  | Optional: \{\} <br /> |
 
 
 #### SecretKeyReference

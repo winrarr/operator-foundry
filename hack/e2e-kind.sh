@@ -8,7 +8,7 @@ PROJECT_NAME=${PROJECT_NAME:-operator-foundry}
 OPERATOR_NAMESPACE=${OPERATOR_NAMESPACE:-operator-foundry-system}
 E2E_TEST_NAMESPACE=${E2E_TEST_NAMESPACE:-operator-foundry-e2e}
 MOCK_API_IMG=${MOCK_API_IMG:-ghcr.io/winrarr/operator-foundry-mock-api:dev}
-CURL_TEST_IMAGE=${CURL_TEST_IMAGE:-curlimages/curl:8.12.1}
+CURL_TEST_IMAGE=${CURL_TEST_IMAGE:-curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777}
 context="kind-${KIND_CLUSTER}"
 mock_api_url="http://127.0.0.1:18080"
 port_forward_pid=""
@@ -303,13 +303,49 @@ if [[ "${KIND_CNI}" == cilium ]]; then
   kubectl_cmd -n kube-system get service/hubble-relay >/dev/null
   kubectl_cmd apply -f config/network-policy/default-deny-ingress.yaml >/dev/null
   kubectl_cmd apply -f config/network-policy/allow-metrics.yaml >/dev/null
-  kubectl_cmd -n "${E2E_TEST_NAMESPACE}" run metrics-client --image="${CURL_TEST_IMAGE}" --image-pull-policy=IfNotPresent --restart=Never --command -- sleep 300 >/dev/null
+  kubectl_cmd -n "${E2E_TEST_NAMESPACE}" delete pod/metrics-client --ignore-not-found --wait=true >/dev/null
+  cat <<EOF | kubectl_cmd -n "${E2E_TEST_NAMESPACE}" apply -f - >/dev/null
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: metrics-client
+  namespace: ${E2E_TEST_NAMESPACE}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ${PROJECT_NAME}-e2e-metrics-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ${PROJECT_NAME}-metrics-reader
+subjects:
+- kind: ServiceAccount
+  name: metrics-client
+  namespace: ${E2E_TEST_NAMESPACE}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: metrics-client
+  namespace: ${E2E_TEST_NAMESPACE}
+spec:
+  restartPolicy: Never
+  serviceAccountName: metrics-client
+  containers:
+  - name: metrics-client
+    image: ${CURL_TEST_IMAGE}
+    imagePullPolicy: IfNotPresent
+    command: [sleep, "300"]
+EOF
   kubectl_cmd -n "${E2E_TEST_NAMESPACE}" wait --for=condition=Ready pod/metrics-client --timeout=2m
   manager_pod_ip="$(kubectl_cmd -n "${OPERATOR_NAMESPACE}" get pod -l "app.kubernetes.io/instance=${PROJECT_NAME}" -o jsonpath='{.items[0].status.podIP}')"
-  kubectl_cmd -n "${E2E_TEST_NAMESPACE}" exec metrics-client -- curl --fail --silent --show-error --max-time 5 "http://${manager_pod_ip}:8443/metrics" >/dev/null
+  metrics_token="$(kubectl_cmd -n "${E2E_TEST_NAMESPACE}" exec metrics-client -- cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
+  kubectl_cmd -n "${E2E_TEST_NAMESPACE}" exec metrics-client -- curl --fail --silent --show-error --insecure --header "Authorization: Bearer ${metrics_token}" --max-time 5 "https://${manager_pod_ip}:8443/metrics" >/dev/null
   if kubectl_cmd -n "${E2E_TEST_NAMESPACE}" exec metrics-client -- curl --fail --silent --show-error --max-time 5 "http://${manager_pod_ip}:8081/healthz" >/dev/null 2>&1; then
     fail_with_state "default-deny NetworkPolicy unexpectedly allowed health-port ingress"
   fi
+  kubectl_cmd -n "${E2E_TEST_NAMESPACE}" delete pod/metrics-client --ignore-not-found --wait=true >/dev/null
 fi
 
 echo "Kind E2E passed: install, dependency, create, idempotency, update, failure recovery, remote recreation, adoption, delete/orphan, and CNI-specific checks"

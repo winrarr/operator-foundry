@@ -89,8 +89,12 @@ Run the canonical checks early and often:
 make check
 make verify-generated
 make build
+make vulnerability-scan
+make docker-build IMG=local/operator-foundry:security
+make image-vulnerability-scan IMG=local/operator-foundry:security
+make image-sbom IMG=local/operator-foundry:security
 ```
 
-Use a disposable Kind or equivalent live environment when real Kubernetes or external-system behavior remains material and unproven. This repository's golden path uses `make kind-e2e` with its in-cluster mock external API, and `KIND_CNI=cilium make kind-e2e` for the optional Cilium/Hubble and NetworkPolicy path. Extend that matrix when changing reference behavior; do not weaken it by replacing live checks with unit tests that cannot observe the same boundary. Keep live credentials, kubeconfigs, tokens, and local state out of source, tests, samples, and documentation.
+Use a disposable Kind or equivalent live environment when real Kubernetes or external-system behavior remains material and unproven. This repository's golden path uses `make kind-e2e` with its in-cluster mock external API. Use `KIND_CNI=cilium make kind-deploy-e2e` plus the Hubble workflow in `docs/patterns/kind-and-network-policy.md` when discovering NetworkPolicy requirements, and `KIND_CNI=cilium make kind-e2e` for the optional local regression boundary. GitHub Actions uses the default CNI because CNI choice should not affect the operator. Extend the matrix when changing reference behavior; do not weaken it by replacing live checks with unit tests that cannot observe the same boundary. Keep live credentials, kubeconfigs, tokens, and local state out of source, tests, samples, and documentation.
 
 At each meaningful handoff, report the user stories addressed, decisions made, research evidence used, patterns adopted or deferred, automated checks run, live behavior exercised, and important assumptions that remain unverified. Continue toward the broader goal after the first slice instead of treating the first slice as completion.

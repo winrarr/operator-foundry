@@ -20,6 +20,8 @@ The source repositories were inspected locally at `/home/rkth/Documents/dev/harb
 - Infisical has an explicit status lifecycle test for `Ready`, `Reconciling`, and `Stalled`, plus conflict-safe status patching and research-driven API scope.
 - OpenBao has a relatively small typed HTTP client and a clear separation between API types, controllers, client code, generated assets, and strict documentation validation.
 - The repositories have evolved independently. Their Makefiles, Dockerfiles, linter configuration, docs tooling, and generated-artifact checks are similar but not identical.
+- Harbor's release branch patch train is a tested, idempotent pattern that handles dependency eligibility, chart-only history, exact check waiting, immutable tags, missing publication recovery, and stale metadata; Operator Foundry carries it as an inactive optional reference.
+- Infisical's E2E workflow uses a local BuildKit cache handoff and committed-artifact deployment path; Operator Foundry uses the same cache approach and now separates committed live deployment from generation-heavy development deployment.
 - The kstatus convention is implemented through Kubernetes conditions and tests rather than a common runtime dependency.
 
 ## Inferences

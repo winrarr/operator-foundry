@@ -23,6 +23,8 @@ nav = [
     { "Lifecycle and ownership" = "patterns/lifecycle-and-ownership.md" },
     { "Dependencies and drift" = "patterns/dependencies-and-drift.md" },
     { "References and secrets" = "patterns/references-and-secrets.md" },
+    { "Metrics and Prometheus" = "patterns/metrics-and-prometheus.md" },
+    { "Supply-chain verification" = "patterns/supply-chain.md" },
     { "Kind and network-policy validation" = "patterns/kind-and-network-policy.md" },
     { "Optional release patch train" = "patterns/release-patch-train.md" },
   ] },
@@ -42,7 +44,10 @@ nav = [
     { "Operations" = "operations/index.md" },
     { "Local Kind" = "operations/kind.md" },
   ] },
-  { "Contributing" = "contributing/index.md" },
+  { "Contributing" = [
+    { "Contributing" = "contributing/index.md" },
+    { "Optional release automation" = "contributing/releases.md" },
+  ] },
 ]
 
 [project.theme]

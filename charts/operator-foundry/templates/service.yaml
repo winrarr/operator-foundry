@@ -6,9 +6,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
 {{ include "operator-foundry.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
 spec:
   ports:
-  - name: https
+  - name: {{ ternary "https" "http" .Values.metrics.secure }}
     port: {{ .Values.metrics.port }}
     targetPort: metrics
     protocol: TCP

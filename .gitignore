@@ -8,6 +8,7 @@ cover.out
 # Local tools and caches
 .cache/
 .tmp/
+__pycache__/
 hack/*.tmp.*
 go.work
 

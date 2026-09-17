@@ -1,0 +1,6 @@
+misconfigurations:
+  - id: KSV-0041
+    paths:
+      - config/rbac/role.yaml
+      - charts/operator-foundry/templates/clusterrole.yaml
+    statement: The reference operator intentionally reads referenced Secrets cluster-wide so the example can demonstrate cross-namespace reconciliation. Each generated operator must narrow this rule to its actual secret access model.

@@ -11,15 +11,30 @@ MOCK_API_IMG ?= ghcr.io/winrarr/operator-foundry-mock-api:dev
 OPERATOR_NAMESPACE ?= operator-foundry-system
 KIND_CLUSTER ?= operator-foundry
 KIND_CNI ?= default
-KIND_NODE_IMAGE ?= kindest/node:v1.37.0
-CILIUM_VERSION ?= 1.20.1
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE ?= kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+# renovate: datasource=github-releases depName=cilium/cilium
+CILIUM_VERSION ?= 1.20.2
 E2E_TEST_NAMESPACE ?= operator-foundry-e2e
-CURL_TEST_IMAGE ?= curlimages/curl:8.12.1
+# renovate: datasource=docker depName=curlimages/curl
+CURL_TEST_IMAGE ?= curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
 CONTAINER_TOOL ?= docker
 DOCKER_BUILD_CACHE_ARGS ?=
-DOCS_CONTAINER_IMAGE ?= zensical/zensical:0.0.59
+# renovate: datasource=docker depName=zensical/zensical
+DOCS_CONTAINER_IMAGE ?= zensical/zensical:0.0.62@sha256:162b7e191224f57b8c584debe51b157b9802efd25d3a8948e4e0f64c1baaaee6
 DOCS_CONTAINER_MOUNTS = -v "$(PROJECT_DIR)":/docs
 DOCS_CONFIG ?= zensical.toml
+# renovate: datasource=docker depName=aquasec/trivy
+TRIVY_IMAGE ?= aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
+# renovate: datasource=docker depName=anchore/syft
+SYFT_IMAGE ?= anchore/syft:v1.51.1@sha256:95fe0835e5bebc6f8b1f8acef68d47d63d594ef4c0f25c097ff853b23cbac74c
+TRIVY_CACHE_DIR ?= $(HOME)/.cache/operator-foundry/trivy
+SBOM_FILE ?= dist/operator-foundry-image.sbom.spdx.json
+SBOM_SOURCE ?= docker:$(IMG)
+SYFT_DOCKER_CONFIG_MOUNT =
+ifneq ($(wildcard $(HOME)/.docker/config.json),)
+SYFT_DOCKER_CONFIG_MOUNT = -v "$(HOME)/.docker:/root/.docker:ro"
+endif
 KUBECTL ?= kubectl
 KUBECTL_ARGS ?=
 KUBECTL_CMD = $(KUBECTL) $(KUBECTL_ARGS)
@@ -31,15 +46,27 @@ KIND ?= $(LOCALBIN)/kind
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+GOVULNCHECK ?= $(LOCALBIN)/govulncheck
+HUBBLE ?= $(LOCALBIN)/hubble
 
+# renovate: datasource=golang-version depName=go
 GO_TOOLCHAIN ?= go1.27.1
 GO := GOTOOLCHAIN=$(GO_TOOLCHAIN) go
 GOFMT := $(shell GOTOOLCHAIN=$(GO_TOOLCHAIN) go env GOROOT)/bin/gofmt
+# renovate: datasource=github-releases depName=kubernetes-sigs/kustomize
 KUSTOMIZE_VERSION ?= v5.8.1
+# renovate: datasource=github-releases depName=kubernetes-sigs/controller-tools
 CONTROLLER_TOOLS_VERSION ?= v0.22.0
+# renovate: datasource=github-releases depName=elastic/crd-ref-docs
 CRD_REF_DOCS_VERSION ?= v0.3.0
+# renovate: datasource=github-releases depName=golangci/golangci-lint
 GOLANGCI_LINT_VERSION ?= v2.13.2
+# renovate: datasource=github-releases depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.33.0
+# renovate: datasource=go depName=golang.org/x/vuln
+GOVULNCHECK_VERSION ?= v1.8.0
+# renovate: datasource=github-releases depName=cilium/hubble
+HUBBLE_VERSION ?= v1.19.4
 
 .PHONY: all
 all: check build ## Run verification and build the manager.
@@ -133,6 +160,49 @@ docs-serve: generate-api-reference ## Serve the documentation site locally.
 shell-check: ## Validate repository shell scripts parse successfully.
 	bash -n hack/*.sh
 
+.PHONY: vulnerability-scan
+vulnerability-scan: govulncheck ## Scan Go dependencies and repository manifests for high-severity vulnerabilities.
+	"$(GOVULNCHECK)" ./...
+	@mkdir -p "$(TRIVY_CACHE_DIR)"
+	$(CONTAINER_TOOL) run --rm \
+		-v "$(PROJECT_DIR):/src:ro" \
+		-v "$(TRIVY_CACHE_DIR):/root/.cache" \
+		-w /src "$(TRIVY_IMAGE)" fs \
+		--scanners vuln,misconfig \
+		--severity HIGH,CRITICAL \
+		--ignore-unfixed \
+		--ignorefile /src/.trivyignore.yaml \
+		--exit-code 1 \
+		--skip-dirs .git --skip-dirs bin --skip-dirs dist --skip-dirs site .
+
+.PHONY: image-vulnerability-scan
+image-vulnerability-scan: ## Scan the image named by IMG for high-severity vulnerabilities.
+	@test -n "$(IMG)" || { echo "IMG must not be empty" >&2; exit 1; }
+	@mkdir -p "$(TRIVY_CACHE_DIR)"
+	$(CONTAINER_TOOL) run --rm \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		-v "$(TRIVY_CACHE_DIR):/root/.cache" \
+		"$(TRIVY_IMAGE)" image \
+		--scanners vuln \
+		--severity HIGH,CRITICAL \
+		--ignore-unfixed \
+		--exit-code 1 "$(IMG)"
+
+.PHONY: image-sbom
+image-sbom: ## Generate an SPDX JSON SBOM for the image named by IMG.
+	@test -n "$(IMG)" || { echo "IMG must not be empty" >&2; exit 1; }
+	@mkdir -p "$$(dirname "$(SBOM_FILE)")"
+	$(CONTAINER_TOOL) run --rm \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		$(SYFT_DOCKER_CONFIG_MOUNT) \
+		-v "$(PROJECT_DIR):/workspace" \
+		"$(SYFT_IMAGE)" "$(SBOM_SOURCE)" \
+		--source-name "$(PROJECT_NAME)" \
+		-o "spdx-json=/workspace/$(SBOM_FILE)"
+
+.PHONY: security
+security: vulnerability-scan docker-build image-vulnerability-scan image-sbom ## Run local source and image security checks.
+
 .PHONY: check
 check: manifests generate format-check shell-check vet test lint-config lint helm-lint helm-template kustomize-build docs-build ## Run the complete local verification suite.
 
@@ -186,7 +256,13 @@ uninstall: manifests kustomize ## Remove CRDs from the current Kubernetes contex
 	"$(KUSTOMIZE)" build config/crd | $(KUBECTL_CMD) delete --ignore-not-found=true -f -
 
 .PHONY: deploy
-deploy: manifests generate helm-lint ## Install or upgrade the operator chart.
+deploy: manifests generate helm-lint helm-upgrade ## Install or upgrade the operator chart from current generated assets.
+
+.PHONY: deploy-committed
+deploy-committed: helm-upgrade ## Install or upgrade the operator chart from committed assets.
+
+.PHONY: helm-upgrade
+helm-upgrade: ## Install or upgrade the operator chart without generation or validation.
 	IMG_REF="$(IMG)"; \
 	if [[ "$$IMG_REF" == *@* ]]; then \
 		IMG_REPO="$${IMG_REF%@*}"; IMG_DIGEST="$${IMG_REF#*@}"; \
@@ -256,17 +332,28 @@ kind-load-image: kind-create docker-build docker-build-mock-api ## Build and loa
 kind-deploy: kind-up kind-load-image ## Install the operator chart into Kind.
 	$(MAKE) KUBECTL_ARGS="--context=kind-$(KIND_CLUSTER)" HELM_ARGS="--kube-context=kind-$(KIND_CLUSTER)" install deploy
 
+.PHONY: install-committed
+install-committed: ## Install committed CRD artifacts without regenerating them.
+	$(KUBECTL_CMD) apply -f config/crd/bases
+
+.PHONY: kind-deploy-e2e
+kind-deploy-e2e: kind-up kind-load-image ## Install the operator from committed artifacts for live E2E checks.
+	$(MAKE) KUBECTL_ARGS="--context=kind-$(KIND_CLUSTER)" HELM_ARGS="--kube-context=kind-$(KIND_CLUSTER)" install-committed deploy-committed
+
 .PHONY: kind-e2e
-kind-e2e: kind-deploy ## Spin up Kind, install the operator, and run cluster E2E checks.
+kind-e2e: kind-deploy-e2e ## Spin up Kind, install the operator, and run cluster E2E checks.
 	KIND_CLUSTER="$(KIND_CLUSTER)" KIND_CNI="$(KIND_CNI)" PROJECT_NAME="$(PROJECT_NAME)" OPERATOR_NAMESPACE="$(OPERATOR_NAMESPACE)" E2E_TEST_NAMESPACE="$(E2E_TEST_NAMESPACE)" MOCK_API_IMG="$(MOCK_API_IMG)" CURL_TEST_IMAGE="$(CURL_TEST_IMAGE)" KUBECTL="$(KUBECTL)" ./hack/e2e-kind.sh
 
 .PHONY: kind-refresh
-kind-refresh: docker-build kind-load-image ## Rebuild and restart the operator in Kind.
+kind-refresh: docker-build kind-load-image kind-restart ## Rebuild, load, and restart the operator in Kind.
+
+.PHONY: kind-restart
+kind-restart: ## Restart the operator after loading a mutable local image tag.
 	$(KUBECTL) --context="kind-$(KIND_CLUSTER)" -n "$(OPERATOR_NAMESPACE)" rollout restart deployment -l app.kubernetes.io/instance="$(PROJECT_NAME)"
 	$(KUBECTL) --context="kind-$(KIND_CLUSTER)" -n "$(OPERATOR_NAMESPACE)" rollout status deployment -l app.kubernetes.io/instance="$(PROJECT_NAME)" --timeout=5m
 
 .PHONY: kind-hubble-check
-kind-hubble-check: ## Verify Cilium and Hubble are available in a Cilium Kind cluster.
+kind-hubble-check: hubble ## Verify Cilium and Hubble are available in a Cilium Kind cluster.
 	@test "$(KIND_CNI)" = cilium || { echo "Set KIND_CNI=cilium for Hubble checks" >&2; exit 1; }
 	$(KUBECTL) --context="kind-$(KIND_CLUSTER)" -n kube-system rollout status daemonset/cilium --timeout=10m
 	$(KUBECTL) --context="kind-$(KIND_CLUSTER)" -n kube-system rollout status deployment/cilium-operator --timeout=10m
@@ -277,11 +364,13 @@ kind-hubble-check: ## Verify Cilium and Hubble are available in a Cilium Kind cl
 kind-down: kind ## Delete only the named disposable Kind cluster.
 	"$(KIND)" delete cluster --name "$(KIND_CLUSTER)"
 
-.PHONY: kustomize controller-gen crd-ref-docs golangci-lint kind
+.PHONY: kustomize controller-gen crd-ref-docs golangci-lint govulncheck hubble kind
 kustomize: $(KUSTOMIZE)
 controller-gen: $(CONTROLLER_GEN)
 crd-ref-docs: $(CRD_REF_DOCS)
 golangci-lint: $(GOLANGCI_LINT)
+govulncheck: $(GOVULNCHECK)
+hubble: $(HUBBLE)
 kind: $(KIND)
 
 define go-install-tool
@@ -300,6 +389,13 @@ $(CRD_REF_DOCS):
 
 $(GOLANGCI_LINT):
 	$(call go-install-tool,$@,github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+$(GOVULNCHECK):
+	$(call go-install-tool,$@,golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
+
+$(HUBBLE):
+	@mkdir -p "$(LOCALBIN)"
+	HUBBLE_VERSION="$(HUBBLE_VERSION)" ./hack/install_hubble.sh "$@"
 
 KIND_OS ?= linux
 KIND_ARCH ?= $(shell $(GO) env GOARCH)

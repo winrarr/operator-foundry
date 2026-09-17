@@ -28,6 +28,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	patternsv1alpha1 "github.com/winrarr/operator-foundry/api/patterns/v1alpha1"
@@ -46,12 +47,18 @@ func init() {
 
 func main() {
 	var metricsAddr string
+	var metricsCertPath, metricsCertName, metricsCertKey string
 	var probeAddr string
 	var enableLeaderElection bool
+	var secureMetrics bool
 	var enableHTTP2 bool
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to.")
+	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the health probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election.")
+	flag.BoolVar(&secureMetrics, "metrics-secure", true, "If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
+	flag.StringVar(&metricsCertPath, "metrics-cert-path", "", "The directory that contains the metrics server certificate.")
+	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
+	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "Enable HTTP/2 for the metrics and webhook servers.")
 	options := zap.Options{Development: true}
 	options.BindFlags(flag.CommandLine)
@@ -64,15 +71,26 @@ func main() {
 			config.NextProtos = []string{"http/1.1"}
 		})
 	}
+	metricsServerOptions := metricsserver.Options{
+		BindAddress:   metricsAddr,
+		SecureServing: secureMetrics,
+		TLSOpts:       tlsOpts,
+	}
+	if secureMetrics {
+		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
+	}
+	if metricsCertPath != "" {
+		metricsServerOptions.CertDir = metricsCertPath
+		metricsServerOptions.CertName = metricsCertName
+		metricsServerOptions.KeyName = metricsCertKey
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "operator-foundry.patterns.operator-foundry.example",
-		Metrics: metricsserver.Options{
-			BindAddress: metricsAddr,
-			TLSOpts:     tlsOpts,
-		},
+		Metrics:                metricsServerOptions,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
