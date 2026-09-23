@@ -30,7 +30,7 @@ var (
 )
 
 func addKnownTypes(scheme *runtime.Scheme) error {
-	scheme.AddKnownTypes(GroupVersion, &PatternConnection{}, &PatternConnectionList{}, &PatternResource{}, &PatternResourceList{})
+	scheme.AddKnownTypes(GroupVersion, &PatternConnection{}, &PatternConnectionList{}, &PatternResource{}, &PatternResourceList{}, &PatternMembership{}, &PatternMembershipList{})
 	metav1.AddToGroupVersion(scheme, GroupVersion)
 	return nil
 }

@@ -16,6 +16,9 @@ KIND_NODE_IMAGE ?= kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405
 # renovate: datasource=github-releases depName=cilium/cilium
 CILIUM_VERSION ?= 1.20.2
 E2E_TEST_NAMESPACE ?= operator-foundry-e2e
+SCOPED_KIND_CLUSTER ?= operator-foundry-scoped
+SCOPED_NAMESPACE ?= operator-foundry-scope-a
+WATCH_NAMESPACES ?= []
 # renovate: datasource=docker depName=curlimages/curl
 CURL_TEST_IMAGE ?= curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
 CONTAINER_TOOL ?= docker
@@ -267,12 +270,14 @@ helm-upgrade: ## Install or upgrade the operator chart without generation or val
 	if [[ "$$IMG_REF" == *@* ]]; then \
 		IMG_REPO="$${IMG_REF%@*}"; IMG_DIGEST="$${IMG_REF#*@}"; \
 		$(HELM_CMD) upgrade --install "$(PROJECT_NAME)" "$(CHART_DIR)" --namespace "$(OPERATOR_NAMESPACE)" --create-namespace \
-			--set-string "image.repository=$$IMG_REPO" --set-string "image.digest=$$IMG_DIGEST" --set-string image.tag="" --wait --timeout 5m; \
+			--set-string "image.repository=$$IMG_REPO" --set-string "image.digest=$$IMG_DIGEST" --set-string image.tag="" \
+			--set-json 'watchNamespaces=$(WATCH_NAMESPACES)' --wait --timeout 5m; \
 	else \
 		IMG_LAST="$${IMG_REF##*/}"; \
 		if [[ "$$IMG_LAST" == *:* ]]; then IMG_REPO="$${IMG_REF%:*}"; IMG_TAG="$${IMG_REF##*:}"; else IMG_REPO="$$IMG_REF"; IMG_TAG="latest"; fi; \
 		$(HELM_CMD) upgrade --install "$(PROJECT_NAME)" "$(CHART_DIR)" --namespace "$(OPERATOR_NAMESPACE)" --create-namespace \
-			--set-string "image.repository=$$IMG_REPO" --set-string "image.tag=$$IMG_TAG" --wait --timeout 5m; \
+			--set-string "image.repository=$$IMG_REPO" --set-string "image.tag=$$IMG_TAG" \
+			--set-json 'watchNamespaces=$(WATCH_NAMESPACES)' --wait --timeout 5m; \
 	fi
 
 .PHONY: undeploy
@@ -343,6 +348,13 @@ kind-deploy-e2e: kind-up kind-load-image ## Install the operator from committed 
 .PHONY: kind-e2e
 kind-e2e: kind-deploy-e2e ## Spin up Kind, install the operator, and run cluster E2E checks.
 	KIND_CLUSTER="$(KIND_CLUSTER)" KIND_CNI="$(KIND_CNI)" PROJECT_NAME="$(PROJECT_NAME)" OPERATOR_NAMESPACE="$(OPERATOR_NAMESPACE)" E2E_TEST_NAMESPACE="$(E2E_TEST_NAMESPACE)" MOCK_API_IMG="$(MOCK_API_IMG)" CURL_TEST_IMAGE="$(CURL_TEST_IMAGE)" KUBECTL="$(KUBECTL)" ./hack/e2e-kind.sh
+
+.PHONY: kind-scoped-e2e
+kind-scoped-e2e: ## Exercise namespace-scoped manager RBAC and tenant author permissions in a separate Kind cluster.
+	$(MAKE) KIND_CLUSTER="$(SCOPED_KIND_CLUSTER)" kind-up kind-load-image
+	$(KUBECTL) --context="kind-$(SCOPED_KIND_CLUSTER)" create namespace "$(SCOPED_NAMESPACE)" --dry-run=client -o yaml | $(KUBECTL) --context="kind-$(SCOPED_KIND_CLUSTER)" apply -f -
+	$(MAKE) KIND_CLUSTER="$(SCOPED_KIND_CLUSTER)" KUBECTL_ARGS="--context=kind-$(SCOPED_KIND_CLUSTER)" HELM_ARGS="--kube-context=kind-$(SCOPED_KIND_CLUSTER)" WATCH_NAMESPACES='["$(SCOPED_NAMESPACE)"]' install-committed helm-upgrade
+	KIND_CLUSTER="$(SCOPED_KIND_CLUSTER)" PROJECT_NAME="$(PROJECT_NAME)" OPERATOR_NAMESPACE="$(OPERATOR_NAMESPACE)" SCOPED_NAMESPACE="$(SCOPED_NAMESPACE)" KUBECTL="$(KUBECTL)" ./hack/e2e-scoped.sh
 
 .PHONY: kind-refresh
 kind-refresh: docker-build kind-load-image kind-restart ## Rebuild, load, and restart the operator in Kind.

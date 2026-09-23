@@ -17,6 +17,7 @@ The example API and controllers in this repository are reference material. Keep 
 - connection and Secret-reference handling;
 - adoption, orphaning, deletion, finalizers, and drift detection;
 - dependency readiness and reconciliation retries;
+- one-edge relationship claims and optional namespace-scoped tenant access;
 - fake-client, HTTP contract, and in-cluster operational tests;
 - generated CRDs, RBAC, API reference documentation, Helm, and Kustomize;
 - optional secure metrics, Prometheus `ServiceMonitor`, and network-policy

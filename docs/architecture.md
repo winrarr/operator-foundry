@@ -5,18 +5,18 @@ Operator Foundry has two related purposes:
 1. provide a usable repository baseline for a new operator;
 2. provide concrete reference patterns for agents and maintainers.
 
-The active Go code demonstrates a small external-system operator shape:
+The active Go code demonstrates a small external-system operator shape with a separate relationship claim:
 
 ```text
-Kubernetes Secret → PatternConnection → PatternResource reconciler → typed external client → mock external API in E2E
+Kubernetes Secret → PatternConnection → PatternResource and PatternMembership reconcilers → typed external client → mock external API in E2E
 ```
 
 The example API and controllers are deliberately generic. They demonstrate how the layers fit together, but they do not define the API of future operators.
 
 ## Boundaries
 
-- `api/patterns/v1alpha1` contains the reference custom resources and their Kubernetes contract.
-- `internal/controller` contains condition, dependency, lifecycle, and reconciliation patterns.
+- `api/patterns/v1alpha1` contains the reference custom resources and their Kubernetes contract, including one-resource relationship claims.
+- `internal/controller` contains condition, dependency, lifecycle, namespace-scope, and reconciliation patterns.
 - `internal/exampleclient` contains a deliberately small typed HTTP client surface.
 - `internal/mockexternalapi` and `cmd/mockexternalapi` contain the disposable external system used only by live tests.
 - `config/` and `charts/` contain installation and generated delivery assets.

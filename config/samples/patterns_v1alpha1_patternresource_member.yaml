@@ -1,0 +1,11 @@
+apiVersion: patterns.operator-foundry.example/v1alpha1
+kind: PatternResource
+metadata:
+  name: example-member
+  namespace: default
+spec:
+  connectionRef:
+    name: example
+  value: member
+  creationPolicy: CreateOrAdopt
+  deletionPolicy: Orphan

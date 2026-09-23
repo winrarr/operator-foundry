@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	patternsv1alpha1 "github.com/winrarr/operator-foundry/api/patterns/v1alpha1"
@@ -24,15 +25,16 @@ import (
 )
 
 type externalTestServer struct {
-	mu        sync.Mutex
-	resources map[string]exampleclient.Resource
-	requests  []string
-	server    *httptest.Server
+	mu          sync.Mutex
+	resources   map[string]exampleclient.Resource
+	memberships map[string]exampleclient.Membership
+	requests    []string
+	server      *httptest.Server
 }
 
 func newExternalTestServer(t *testing.T, resources ...exampleclient.Resource) *externalTestServer {
 	t.Helper()
-	external := &externalTestServer{resources: make(map[string]exampleclient.Resource)}
+	external := &externalTestServer{resources: make(map[string]exampleclient.Resource), memberships: make(map[string]exampleclient.Membership)}
 	for _, resource := range resources {
 		external.resources[resource.Name] = resource
 	}
@@ -48,6 +50,35 @@ func (e *externalTestServer) serveHTTP(writer http.ResponseWriter, request *http
 	}
 	e.mu.Lock()
 	e.requests = append(e.requests, request.Method+" "+request.URL.Path)
+	if strings.HasPrefix(request.URL.Path, "/memberships/") {
+		key := strings.TrimPrefix(request.URL.Path, "/memberships/")
+		switch request.Method {
+		case http.MethodPut:
+			var membership exampleclient.Membership
+			if err := json.NewDecoder(request.Body).Decode(&membership); err != nil {
+				e.mu.Unlock()
+				http.Error(writer, err.Error(), http.StatusBadRequest)
+				return
+			}
+			e.memberships[key] = membership
+			e.mu.Unlock()
+			writer.WriteHeader(http.StatusNoContent)
+			return
+		case http.MethodDelete:
+			if _, exists := e.memberships[key]; !exists {
+				e.mu.Unlock()
+				http.NotFound(writer, request)
+				return
+			}
+			delete(e.memberships, key)
+			e.mu.Unlock()
+			writer.WriteHeader(http.StatusNoContent)
+			return
+		}
+		e.mu.Unlock()
+		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	e.mu.Unlock()
 
 	if request.URL.Path == "/health" && request.Method == http.MethodGet {
@@ -117,7 +148,7 @@ func newControllerTestClient(t *testing.T, objects ...client.Object) client.Clie
 	}
 	return fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithStatusSubresource(&patternsv1alpha1.PatternConnection{}, &patternsv1alpha1.PatternResource{}).
+		WithStatusSubresource(&patternsv1alpha1.PatternConnection{}, &patternsv1alpha1.PatternResource{}, &patternsv1alpha1.PatternMembership{}).
 		WithObjects(objects...).
 		Build()
 }
@@ -326,6 +357,177 @@ func TestPatternResourceReconcileDeletesManagedExternalResource(t *testing.T) {
 	var observed patternsv1alpha1.PatternResource
 	if err := kubeClient.Get(context.Background(), client.ObjectKey{Name: "widget", Namespace: "demo"}, &observed); !apierrors.IsNotFound(err) {
 		t.Fatalf("resource should be removed after the finalizer is cleared, got %v", err)
+	}
+}
+
+func TestPatternResourceReconcileReleasesFinalizerWhenConnectionIsMissing(t *testing.T) {
+	deletionTime := metav1.NewTime(time.Now())
+	resource := &patternsv1alpha1.PatternResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "widget",
+			Namespace:         "demo",
+			DeletionTimestamp: &deletionTime,
+			Finalizers:        []string{FinalizerName},
+		},
+		Spec: patternsv1alpha1.PatternResourceSpec{
+			ConnectionRef:  patternsv1alpha1.LocalObjectReference{Name: "connection"},
+			DeletionPolicy: patternsv1alpha1.DeletionPolicyDelete,
+		},
+		Status: patternsv1alpha1.PatternResourceStatus{ID: "external-widget"},
+	}
+	kubeClient := newControllerTestClient(t, resource)
+	reconciler := &PatternResourceReconciler{Client: kubeClient}
+
+	if _, err := reconciler.Reconcile(context.Background(), reconcileRequest("widget")); err != nil {
+		t.Fatalf("reconcile deletion: %v", err)
+	}
+	var observed patternsv1alpha1.PatternResource
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(resource), &observed); !apierrors.IsNotFound(err) {
+		t.Fatalf("resource should be removed after dependency loss, got %v", err)
+	}
+}
+
+func TestPatternResourceReconcileReleasesFinalizerWhenCredentialSecretIsMissing(t *testing.T) {
+	deletionTime := metav1.NewTime(time.Now())
+	resource := &patternsv1alpha1.PatternResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "widget",
+			Namespace:         "demo",
+			DeletionTimestamp: &deletionTime,
+			Finalizers:        []string{FinalizerName},
+		},
+		Spec: patternsv1alpha1.PatternResourceSpec{
+			ConnectionRef:  patternsv1alpha1.LocalObjectReference{Name: "connection"},
+			DeletionPolicy: patternsv1alpha1.DeletionPolicyDelete,
+		},
+		Status: patternsv1alpha1.PatternResourceStatus{ID: "external-widget"},
+	}
+	kubeClient := newControllerTestClient(t, testConnection("https://api.example.test"), resource)
+	reconciler := &PatternResourceReconciler{Client: kubeClient}
+
+	if _, err := reconciler.Reconcile(context.Background(), reconcileRequest("widget")); err != nil {
+		t.Fatalf("reconcile deletion: %v", err)
+	}
+	var observed patternsv1alpha1.PatternResource
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(resource), &observed); !apierrors.IsNotFound(err) {
+		t.Fatalf("resource should be removed after dependency loss, got %v", err)
+	}
+}
+
+func TestPatternResourceReconcileRetainsFinalizerWhenExternalCleanupFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodDelete || request.URL.Path != "/resources/widget" {
+			t.Errorf("unexpected cleanup request: %s %s", request.Method, request.URL.Path)
+		}
+		http.Error(writer, "temporary upstream failure", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	deletionTime := metav1.NewTime(time.Now())
+	resource := &patternsv1alpha1.PatternResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "widget",
+			Namespace:         "demo",
+			DeletionTimestamp: &deletionTime,
+			Finalizers:        []string{FinalizerName},
+		},
+		Spec: patternsv1alpha1.PatternResourceSpec{
+			ConnectionRef:  patternsv1alpha1.LocalObjectReference{Name: "connection"},
+			DeletionPolicy: patternsv1alpha1.DeletionPolicyDelete,
+		},
+		Status: patternsv1alpha1.PatternResourceStatus{ID: "external-widget"},
+	}
+	kubeClient := newControllerTestClient(t, testConnection(server.URL), testCredentials(), resource)
+	reconciler := &PatternResourceReconciler{Client: kubeClient}
+
+	if _, err := reconciler.Reconcile(context.Background(), reconcileRequest("widget")); err == nil {
+		t.Fatal("reconcile deletion succeeded after an upstream failure")
+	}
+	var observed patternsv1alpha1.PatternResource
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(resource), &observed); err != nil {
+		t.Fatalf("get resource after failed cleanup: %v", err)
+	}
+	if !controllerutil.ContainsFinalizer(&observed, FinalizerName) {
+		t.Fatal("transient external failure unexpectedly released the finalizer")
+	}
+}
+
+func TestPatternMembershipReconcileCreatesOneManagedEdge(t *testing.T) {
+	external := newExternalTestServer(t)
+	ready := []metav1.Condition{{Type: ConditionReady, Status: metav1.ConditionTrue, ObservedGeneration: 1}}
+	connection := testConnection(external.server.URL)
+	parent := &patternsv1alpha1.PatternResource{
+		ObjectMeta: metav1.ObjectMeta{Name: "parent", Namespace: "demo", Generation: 1},
+		Spec:       patternsv1alpha1.PatternResourceSpec{ConnectionRef: patternsv1alpha1.LocalObjectReference{Name: "connection"}},
+		Status:     patternsv1alpha1.PatternResourceStatus{StatusBase: patternsv1alpha1.StatusBase{Conditions: ready}, ID: "parent-id"},
+	}
+	member := &patternsv1alpha1.PatternResource{
+		ObjectMeta: metav1.ObjectMeta{Name: "member", Namespace: "demo", Generation: 1},
+		Spec:       patternsv1alpha1.PatternResourceSpec{ConnectionRef: patternsv1alpha1.LocalObjectReference{Name: "connection"}},
+		Status:     patternsv1alpha1.PatternResourceStatus{StatusBase: patternsv1alpha1.StatusBase{Conditions: ready}, ID: "member-id"},
+	}
+	membership := &patternsv1alpha1.PatternMembership{
+		ObjectMeta: metav1.ObjectMeta{Name: "parent-member", Namespace: "demo", Generation: 1},
+		Spec: patternsv1alpha1.PatternMembershipSpec{
+			ConnectionRef: patternsv1alpha1.LocalObjectReference{Name: "connection"},
+			ParentRef:     patternsv1alpha1.LocalObjectReference{Name: "parent"},
+			MemberRef:     patternsv1alpha1.LocalObjectReference{Name: "member"},
+		},
+	}
+	kubeClient := newControllerTestClient(t, connection, testCredentials(), parent, member, membership)
+	reconciler := &PatternMembershipReconciler{Client: kubeClient}
+
+	if _, err := reconciler.Reconcile(context.Background(), reconcileRequest("parent-member")); err != nil {
+		t.Fatalf("reconcile membership: %v", err)
+	}
+	var observed patternsv1alpha1.PatternMembership
+	if err := kubeClient.Get(context.Background(), client.ObjectKeyFromObject(membership), &observed); err != nil {
+		t.Fatalf("get membership: %v", err)
+	}
+	if observed.Status.ParentID != "parent-id" || observed.Status.MemberID != "member-id" {
+		t.Fatalf("observed edge identities = (%q, %q), want (parent-id, member-id)", observed.Status.ParentID, observed.Status.MemberID)
+	}
+	assertConditionStatus(t, observed.Status.Conditions, ConditionReady, metav1.ConditionTrue)
+	if !controllerutil.ContainsFinalizer(&observed, FinalizerName) {
+		t.Fatal("membership finalizer was not persisted")
+	}
+	if _, exists := external.memberships[exampleclient.MembershipKey("parent-id", "member-id")]; !exists {
+		t.Fatal("external relationship edge was not created")
+	}
+}
+
+func TestPatternMembershipDeleteRemovesOnlyItsEdge(t *testing.T) {
+	external := newExternalTestServer(t)
+	parentMemberKey := exampleclient.MembershipKey("parent-id", "member-id")
+	otherMemberKey := exampleclient.MembershipKey("parent-id", "other-member-id")
+	external.memberships[parentMemberKey] = exampleclient.Membership{ParentID: "parent-id", MemberID: "member-id"}
+	external.memberships[otherMemberKey] = exampleclient.Membership{ParentID: "parent-id", MemberID: "other-member-id"}
+	deletionTime := metav1.NewTime(time.Now())
+	membership := &patternsv1alpha1.PatternMembership{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "parent-member",
+			Namespace:         "demo",
+			Generation:        1,
+			DeletionTimestamp: &deletionTime,
+			Finalizers:        []string{FinalizerName},
+		},
+		Spec: patternsv1alpha1.PatternMembershipSpec{
+			ConnectionRef: patternsv1alpha1.LocalObjectReference{Name: "connection"},
+			ParentRef:     patternsv1alpha1.LocalObjectReference{Name: "parent"},
+			MemberRef:     patternsv1alpha1.LocalObjectReference{Name: "member"},
+		},
+		Status: patternsv1alpha1.PatternMembershipStatus{ParentID: "parent-id", MemberID: "member-id"},
+	}
+	kubeClient := newControllerTestClient(t, testConnection(external.server.URL), testCredentials(), membership)
+	reconciler := &PatternMembershipReconciler{Client: kubeClient}
+
+	if _, err := reconciler.Reconcile(context.Background(), reconcileRequest("parent-member")); err != nil {
+		t.Fatalf("reconcile membership deletion: %v", err)
+	}
+	if _, exists := external.memberships[parentMemberKey]; exists {
+		t.Fatal("managed edge was not deleted")
+	}
+	if _, exists := external.memberships[otherMemberKey]; !exists {
+		t.Fatal("deleting one claim removed an unrelated edge")
 	}
 }
 

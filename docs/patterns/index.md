@@ -7,6 +7,8 @@ These pages explain the reference implementation's reusable patterns and the que
 - [Lifecycle and ownership](lifecycle-and-ownership.md)
 - [Dependencies and drift](dependencies-and-drift.md)
 - [References and secrets](references-and-secrets.md)
+- [Namespace scope and tenant access](namespace-scope-and-tenancy.md)
+- [Relationship edge ownership](relationship-edge-ownership.md)
 - [Metrics and Prometheus](metrics-and-prometheus.md)
 - [Supply-chain verification](supply-chain.md)
 - [Kind and network-policy validation](kind-and-network-policy.md)

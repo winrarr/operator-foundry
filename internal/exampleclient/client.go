@@ -20,6 +20,7 @@ package exampleclient
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +37,17 @@ type Resource struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
 	Value string `json:"value"`
+}
+
+// Membership describes one relationship edge between external resources.
+type Membership struct {
+	ParentID string `json:"parentID"`
+	MemberID string `json:"memberID"`
+}
+
+// MembershipKey returns a URL-safe key for the relationship edge.
+func MembershipKey(parentID, memberID string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(parentID + "\x00" + memberID))
 }
 
 type Client struct {
@@ -100,6 +112,17 @@ func (c *Client) UpdateResource(ctx context.Context, resource Resource) (*Resour
 
 func (c *Client) DeleteResource(ctx context.Context, name string) error {
 	return c.do(ctx, http.MethodDelete, "/resources/"+url.PathEscape(name), nil, nil)
+}
+
+// EnsureMembership creates or preserves exactly one relationship edge.
+func (c *Client) EnsureMembership(ctx context.Context, parentID, memberID string) error {
+	membership := Membership{ParentID: parentID, MemberID: memberID}
+	return c.do(ctx, http.MethodPut, "/memberships/"+MembershipKey(parentID, memberID), membership, nil)
+}
+
+// DeleteMembership removes exactly one relationship edge.
+func (c *Client) DeleteMembership(ctx context.Context, parentID, memberID string) error {
+	return c.do(ctx, http.MethodDelete, "/memberships/"+MembershipKey(parentID, memberID), nil, nil)
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body any, result any) error {

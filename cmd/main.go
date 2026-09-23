@@ -52,6 +52,7 @@ func main() {
 	var enableLeaderElection bool
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var watchNamespaces string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the health probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election.")
@@ -60,10 +61,16 @@ func main() {
 	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "Enable HTTP/2 for the metrics and webhook servers.")
+	flag.StringVar(&watchNamespaces, "watch-namespaces", "", "Comma-separated namespaces to watch; empty means all namespaces.")
 	options := zap.Options{Development: true}
 	options.BindFlags(flag.CommandLine)
 	flag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&options)))
+	cacheOptions, err := controller.CacheOptionsForWatchNamespaces(watchNamespaces)
+	if err != nil {
+		setupLog.Error(err, "invalid operator configuration")
+		os.Exit(1)
+	}
 
 	var tlsOpts []func(*tls.Config)
 	if !enableHTTP2 {
@@ -87,6 +94,7 @@ func main() {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
+		Cache:                  cacheOptions,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "operator-foundry.patterns.operator-foundry.example",
@@ -109,6 +117,13 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PatternResource")
+		os.Exit(1)
+	}
+	if err := (&controller.PatternMembershipReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "PatternMembership")
 		os.Exit(1)
 	}
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

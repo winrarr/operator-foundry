@@ -34,3 +34,32 @@ The durable shared layer is repository and workflow structure plus a small set o
 - Include concrete example code and patterns without requiring every new operator to retain them.
 - Make the kickoff workflow require explicit review of lifecycle and ownership patterns.
 - Prefer copied, self-contained patterns over an initial shared Go runtime library or large code generator.
+
+## Follow-up OpenBao commit review — 2026-09-23
+
+The OpenBao Entity Operator history before Operator Foundry commit `2f6184e` (2026-09-17 15:09:41 +02:00) was reviewed as a source of engineering patterns. All 13 commits in that interval were inspected:
+
+- `ef45c29` initial foundation;
+- `5b90940` entity aliases;
+- `3ec3c66` groups and membership;
+- `2234435` cleanup dependency handling;
+- `e6d87e4` external OpenBao namespace targeting;
+- `06ce449` Helm packaging and release workflow;
+- `063a6cc` Kubernetes Auth;
+- `3f61bbf` ACL policies;
+- `a59e2fc` comprehensive guides;
+- `9e1dbe1` narrower live verification scope;
+- `d267916` AppRole and tenancy roadmap;
+- `02b0db1` namespace-scoped operator deployment; and
+- `0c10d61` platform-owned tenant boundary enforcement.
+
+### Adopted patterns
+
+- A `Delete` finalizer must not hold Kubernetes deletion forever when a required connection or credential Secret is confirmed missing. Operator Foundry releases that finalizer with a warning that external state may be orphaned; transient external errors still retry.
+- A manager can accept an optional namespace allowlist and bind its namespaced permissions only in those namespaces. Tenant author permissions are a separate unbound role that excludes platform-owned connections and Secrets. This scopes access but does not claim hostile multi-tenancy by itself.
+- A relationship claim can own one external edge independently. Operator Foundry uses `PatternMembership` and does not replace a parent's whole relationship list when one claim changes.
+- Authentication design should account for static credential rotation, renewable workload identities, short-lived tokens, client cache invalidation, and health checks within external tenant scope. The example keeps one simple bearer-token implementation while documenting the alternatives.
+
+### Not adopted as generic API
+
+OpenBao entity aliases, groups, policies, AppRole fields, Kubernetes Auth settings, and its external namespace property depend on OpenBao semantics. They informed the generic relationship, authentication, and scope patterns above, but their resource shape and token lifecycle remain examples to research rather than defaults for future operators.

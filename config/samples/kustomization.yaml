@@ -1,3 +1,5 @@
 resources:
 - patterns_v1alpha1_patternconnection.yaml
 - patterns_v1alpha1_patternresource.yaml
+- patterns_v1alpha1_patternresource_member.yaml
+- patterns_v1alpha1_patternmembership.yaml

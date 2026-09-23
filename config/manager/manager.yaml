@@ -40,6 +40,10 @@ spec:
         args:
         - --leader-elect
         - --health-probe-bind-address=:8081
+        - --watch-namespaces=$(WATCH_NAMESPACES)
+        env:
+        - name: WATCH_NAMESPACES
+          value: ""
         ports:
         - name: health
           containerPort: 8081

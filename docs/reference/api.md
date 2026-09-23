@@ -12,6 +12,7 @@ Package v1alpha1 contains the reference custom resources used by Operator Foundr
 
 ### Resource Types
 - [PatternConnection](#patternconnection)
+- [PatternMembership](#patternmembership)
 - [PatternResource](#patternresource)
 
 
@@ -62,6 +63,7 @@ LocalObjectReference identifies a resource in the same namespace.
 
 
 _Appears in:_
+- [PatternMembershipSpec](#patternmembershipspec)
 - [PatternResourceSpec](#patternresourcespec)
 
 | Field | Description | Default | Validation |
@@ -103,6 +105,44 @@ _Appears in:_
 | `endpoint` _string_ | Endpoint is the external API base URL. |  | Pattern: `^https?://` <br /> |
 | `authSecretRef` _[SecretKeyReference](#secretkeyreference)_ | AuthSecretRef references a same-namespace Secret containing the bearer token. |  |  |
 | `requestTimeout` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | RequestTimeout bounds each external API request. |  | Optional: \{\} <br /> |
+
+
+#### PatternMembership
+
+
+
+PatternMembership claims one relationship edge between two PatternResources.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `patterns.operator-foundry.example/v1alpha1` | | |
+| `kind` _string_ | `PatternMembership` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[PatternMembershipSpec](#patternmembershipspec)_ |  |  |  |
+
+
+#### PatternMembershipSpec
+
+
+
+PatternMembershipSpec claims one relationship edge between two managed
+PatternResources. Delete the PatternMembership to delete only this edge.
+
+
+
+_Appears in:_
+- [PatternMembership](#patternmembership)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `connectionRef` _[LocalObjectReference](#localobjectreference)_ | ConnectionRef selects the same-namespace PatternConnection used for the edge. |  |  |
+| `parentRef` _[LocalObjectReference](#localobjectreference)_ | ParentRef identifies the resource that owns the relationship. |  |  |
+| `memberRef` _[LocalObjectReference](#localobjectreference)_ | MemberRef identifies the resource connected to the parent. |  |  |
+| `driftDetectionInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | DriftDetectionInterval controls periodic re-observation of the external edge.<br />When omitted, the controller reconciles on Kubernetes events only. |  | Optional: \{\} <br /> |
 
 
 #### PatternResource
