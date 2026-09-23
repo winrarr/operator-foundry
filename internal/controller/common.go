@@ -151,7 +151,9 @@ func removeFinalizer(ctx context.Context, kubeClient client.Client, object clien
 
 func removeFinalizerAfterDependencyLoss(ctx context.Context, kubeClient client.Client, object client.Object, dependency string, err error) (ctrl.Result, error) {
 	var dependencyErr *dependencyError
-	if !apierrors.IsNotFound(err) && !(errors.As(err, &dependencyErr) && apierrors.IsNotFound(dependencyErr.cause)) {
+	dependencyMissing := apierrors.IsNotFound(err) ||
+		(errors.As(err, &dependencyErr) && apierrors.IsNotFound(dependencyErr.cause))
+	if !dependencyMissing {
 		return ctrl.Result{}, err
 	}
 	log.FromContext(ctx).Error(err, "releasing deletion finalizer because cleanup dependency is unavailable; external state may be orphaned", "dependency", dependency, "resource", client.ObjectKeyFromObject(object))
