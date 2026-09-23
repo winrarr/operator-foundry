@@ -9,6 +9,8 @@ These stories describe the people and workflows the foundation should support. T
 - As a coding agent, I want concrete API, client, reconciler, testing, documentation, and workflow examples that I can adapt without treating them as universal requirements.
 - As a maintainer, I want generated artifacts, local commands, CI, and documentation validation to form one coherent verification workflow.
 - As an operator author, I want lifecycle, status, dependency, authentication, and ownership patterns available for deliberate reuse.
+- As an operator author, I want an example that gives one Kubernetes resource ownership of one external relationship edge.
+- As a platform operator, I want to restrict a manager and tenant authors to selected namespaces and tenant-safe resource kinds.
 - As an operator author, I want fast unit, HTTP contract, and reconciliation tests plus a disposable Kind E2E path for behavior that requires a real cluster.
 - As an operator author, I want to switch between Kind's default CNI and an optional Cilium/Hubble setup when documenting or testing NetworkPolicy behavior.
 - As an operator author, I want to apply temporary default-deny rules and use Hubble's dropped flows to derive the smallest native and Cilium network policies that permit the operator's representative workflows.

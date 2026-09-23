@@ -29,8 +29,8 @@ trap cleanup EXIT
 
 fail_with_state() {
   echo "$1" >&2
-  kubectl_cmd -n "${E2E_TEST_NAMESPACE}" get patternconnections,patternresources,pods -o wide >&2 || true
-  kubectl_cmd -n "${E2E_TEST_NAMESPACE}" get patternconnection,patternresource -o yaml >&2 || true
+  kubectl_cmd -n "${E2E_TEST_NAMESPACE}" get patternconnections,patternresources,patternmemberships,pods -o wide >&2 || true
+  kubectl_cmd -n "${E2E_TEST_NAMESPACE}" get patternconnection,patternresource,patternmembership -o yaml >&2 || true
   if [[ -f "${port_forward_log}" ]]; then
     cat "${port_forward_log}" >&2
   fi
@@ -125,6 +125,13 @@ wait_for_mock_api() {
     sleep 1
   done
   fail_with_state "mock API port-forward did not return the expected health response"
+}
+
+membership_exists() {
+  admin_curl --get \
+    --data-urlencode "parentID=$1" \
+    --data-urlencode "memberID=$2" \
+    "${mock_api_url}/admin/memberships" >/dev/null
 }
 
 wait_for_get_count_after() {
@@ -296,6 +303,115 @@ wait_for_absent patternresource orphan "${E2E_TEST_NAMESPACE}"
 orphan_value="$(admin_curl "${mock_api_url}/admin/resources/orphan" | jq -r '.value')"
 [[ "${orphan_value}" == retained ]] || fail_with_state "Orphan policy did not retain the external resource"
 
+cat <<'EOF' | kubectl_cmd -n "${E2E_TEST_NAMESPACE}" apply -f - >/dev/null
+apiVersion: patterns.operator-foundry.example/v1alpha1
+kind: PatternResource
+metadata:
+  name: membership-parent
+spec:
+  connectionRef:
+    name: example
+  value: parent
+  creationPolicy: Create
+  deletionPolicy: Orphan
+---
+apiVersion: patterns.operator-foundry.example/v1alpha1
+kind: PatternResource
+metadata:
+  name: membership-member
+spec:
+  connectionRef:
+    name: example
+  value: member
+  creationPolicy: Create
+  deletionPolicy: Orphan
+---
+apiVersion: patterns.operator-foundry.example/v1alpha1
+kind: PatternResource
+metadata:
+  name: membership-other-member
+spec:
+  connectionRef:
+    name: example
+  value: other-member
+  creationPolicy: Create
+  deletionPolicy: Orphan
+EOF
+wait_for_ready patternresource membership-parent "${E2E_TEST_NAMESPACE}"
+wait_for_ready patternresource membership-member "${E2E_TEST_NAMESPACE}"
+wait_for_ready patternresource membership-other-member "${E2E_TEST_NAMESPACE}"
+parent_id="$(kubectl_cmd -n "${E2E_TEST_NAMESPACE}" get patternresource/membership-parent -o jsonpath='{.status.id}')"
+member_id="$(kubectl_cmd -n "${E2E_TEST_NAMESPACE}" get patternresource/membership-member -o jsonpath='{.status.id}')"
+other_member_id="$(kubectl_cmd -n "${E2E_TEST_NAMESPACE}" get patternresource/membership-other-member -o jsonpath='{.status.id}')"
+cat <<'EOF' | kubectl_cmd -n "${E2E_TEST_NAMESPACE}" apply -f - >/dev/null
+apiVersion: patterns.operator-foundry.example/v1alpha1
+kind: PatternMembership
+metadata:
+  name: managed-edge
+spec:
+  connectionRef:
+    name: example
+  parentRef:
+    name: membership-parent
+  memberRef:
+    name: membership-member
+---
+apiVersion: patterns.operator-foundry.example/v1alpha1
+kind: PatternMembership
+metadata:
+  name: independent-edge
+spec:
+  connectionRef:
+    name: example
+  parentRef:
+    name: membership-parent
+  memberRef:
+    name: membership-other-member
+EOF
+wait_for_ready patternmembership managed-edge "${E2E_TEST_NAMESPACE}"
+wait_for_ready patternmembership independent-edge "${E2E_TEST_NAMESPACE}"
+membership_exists "${parent_id}" "${member_id}" || fail_with_state "managed relationship edge was not created"
+membership_exists "${parent_id}" "${other_member_id}" || fail_with_state "independent relationship edge was not created"
+kubectl_cmd -n "${E2E_TEST_NAMESPACE}" delete patternmembership/managed-edge --wait=false >/dev/null
+wait_for_absent patternmembership managed-edge "${E2E_TEST_NAMESPACE}"
+if ! membership_exists "${parent_id}" "${other_member_id}"; then
+  fail_with_state "deleting one membership claim removed an unrelated edge"
+fi
+kubectl_cmd -n "${E2E_TEST_NAMESPACE}" delete patternmembership/independent-edge --wait=false >/dev/null
+wait_for_absent patternmembership independent-edge "${E2E_TEST_NAMESPACE}"
+
+kubectl_cmd -n "${E2E_TEST_NAMESPACE}" create secret generic temporary-token --from-literal=token=test-token >/dev/null
+cat <<EOF | kubectl_cmd -n "${E2E_TEST_NAMESPACE}" apply -f - >/dev/null
+apiVersion: patterns.operator-foundry.example/v1alpha1
+kind: PatternConnection
+metadata:
+  name: temporary
+spec:
+  endpoint: http://mock-external-api.${E2E_TEST_NAMESPACE}.svc.cluster.local:8080
+  authSecretRef:
+    name: temporary-token
+---
+apiVersion: patterns.operator-foundry.example/v1alpha1
+kind: PatternResource
+metadata:
+  name: dependency-lost
+spec:
+  connectionRef:
+    name: temporary
+  value: orphaned-on-dependency-loss
+  creationPolicy: Create
+  deletionPolicy: Delete
+EOF
+wait_for_ready patternconnection temporary "${E2E_TEST_NAMESPACE}"
+wait_for_ready patternresource dependency-lost "${E2E_TEST_NAMESPACE}"
+kubectl_cmd -n "${E2E_TEST_NAMESPACE}" delete patternconnection/temporary --wait=true >/dev/null
+kubectl_cmd -n "${E2E_TEST_NAMESPACE}" delete patternresource/dependency-lost --wait=false >/dev/null
+wait_for_absent patternresource dependency-lost "${E2E_TEST_NAMESPACE}"
+orphaned_value="$(admin_curl "${mock_api_url}/admin/resources/dependency-lost" | jq -r '.value')"
+[[ "${orphaned_value}" == orphaned-on-dependency-loss ]] || fail_with_state "dependency-loss deletion did not expose the external orphan"
+admin_curl -X DELETE "${mock_api_url}/admin/resources/dependency-lost" >/dev/null
+kubectl_cmd -n "${E2E_TEST_NAMESPACE}" delete secret temporary-token --ignore-not-found >/dev/null
+
 if [[ "${KIND_CNI}" == cilium ]]; then
   kubectl_cmd -n kube-system rollout status daemonset/cilium --timeout=10m
   kubectl_cmd -n kube-system rollout status deployment/cilium-operator --timeout=10m
@@ -348,4 +464,4 @@ EOF
   kubectl_cmd -n "${E2E_TEST_NAMESPACE}" delete pod/metrics-client --ignore-not-found --wait=true >/dev/null
 fi
 
-echo "Kind E2E passed: install, dependency, create, idempotency, update, failure recovery, remote recreation, adoption, delete/orphan, and CNI-specific checks"
+echo "Kind E2E passed: install, dependency, create, idempotency, update, failure recovery, remote recreation, adoption, delete/orphan, edge ownership, dependency-loss cleanup, and CNI-specific checks"

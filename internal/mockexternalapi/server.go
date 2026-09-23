@@ -36,11 +36,12 @@ const testToken = "test-token"
 // Server is an in-memory external API with a small administrative surface for
 // deterministic E2E setup and fault injection.
 type Server struct {
-	mu        sync.Mutex
-	resources map[string]exampleclient.Resource
-	requests  RequestStats
-	nextID    int
-	failure   failurePlan
+	mu          sync.Mutex
+	resources   map[string]exampleclient.Resource
+	memberships map[string]exampleclient.Membership
+	requests    RequestStats
+	nextID      int
+	failure     failurePlan
 }
 
 type failurePlan struct {
@@ -60,7 +61,7 @@ type RequestStats struct {
 
 // New creates a mock API seeded with the supplied resources.
 func New(resources ...exampleclient.Resource) *Server {
-	server := &Server{resources: make(map[string]exampleclient.Resource)}
+	server := &Server{resources: make(map[string]exampleclient.Resource), memberships: make(map[string]exampleclient.Membership)}
 	for _, resource := range resources {
 		server.resources[resource.Name] = resource
 	}
@@ -92,6 +93,10 @@ func (s *Server) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "injected upstream failure", status)
 		return
 	}
+	if strings.HasPrefix(request.URL.Path, "/memberships/") {
+		s.serveMembership(writer, request, strings.TrimPrefix(request.URL.Path, "/memberships/"))
+		return
+	}
 
 	if request.URL.Path == "/resources" && request.Method == http.MethodPost {
 		s.createResource(writer, request)
@@ -121,6 +126,23 @@ func (s *Server) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Server) serveAdmin(writer http.ResponseWriter, request *http.Request) {
+	if request.URL.Path == "/admin/memberships" && request.Method == http.MethodGet {
+		parentID := request.URL.Query().Get("parentID")
+		memberID := request.URL.Query().Get("memberID")
+		if parentID == "" || memberID == "" {
+			http.Error(writer, "parentID and memberID are required", http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		membership, exists := s.memberships[exampleclient.MembershipKey(parentID, memberID)]
+		s.mu.Unlock()
+		if !exists {
+			http.NotFound(writer, request)
+			return
+		}
+		writeJSON(writer, http.StatusOK, membership)
+		return
+	}
 	if request.URL.Path == "/admin/stats" && request.Method == http.MethodGet {
 		s.mu.Lock()
 		stats := s.requests
@@ -169,6 +191,42 @@ func (s *Server) serveAdmin(writer http.ResponseWriter, request *http.Request) {
 		s.removeAdminResource(writer, name)
 	default:
 		writer.Header().Set("Allow", "GET, POST, DELETE")
+		writer.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) serveMembership(writer http.ResponseWriter, request *http.Request, key string) {
+	if key == "" {
+		http.Error(writer, "membership key is required", http.StatusBadRequest)
+		return
+	}
+	switch request.Method {
+	case http.MethodPut:
+		var membership exampleclient.Membership
+		if err := decodeJSON(request, &membership); err != nil || membership.ParentID == "" || membership.MemberID == "" {
+			http.Error(writer, "parentID and memberID are required", http.StatusBadRequest)
+			return
+		}
+		if key != exampleclient.MembershipKey(membership.ParentID, membership.MemberID) {
+			http.Error(writer, "membership key does not match the edge", http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		s.memberships[key] = membership
+		s.mu.Unlock()
+		writer.WriteHeader(http.StatusNoContent)
+	case http.MethodDelete:
+		s.mu.Lock()
+		_, exists := s.memberships[key]
+		delete(s.memberships, key)
+		s.mu.Unlock()
+		if !exists {
+			http.NotFound(writer, request)
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	default:
+		writer.Header().Set("Allow", "PUT, DELETE")
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }

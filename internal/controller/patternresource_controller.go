@@ -123,11 +123,11 @@ func (r *PatternResourceReconciler) reconcileDeletion(ctx context.Context, resou
 	}
 	connection, err := getConnection(ctx, r.Client, resource.Namespace, resource.Spec.ConnectionRef.Name)
 	if err != nil {
-		return ctrl.Result{}, err
+		return removeFinalizerAfterDependencyLoss(ctx, r.Client, resource, "PatternConnection", err)
 	}
 	apiClient, err := externalClientForConnection(ctx, r.Client, connection)
 	if err != nil {
-		return ctrl.Result{}, err
+		return removeFinalizerAfterDependencyLoss(ctx, r.Client, resource, "PatternConnection credentials", err)
 	}
 	if err := apiClient.DeleteResource(ctx, externalName(resource.Name, resource.Spec.ExternalName)); err != nil && !errors.Is(err, exampleclient.ErrNotFound) {
 		return ctrl.Result{}, err

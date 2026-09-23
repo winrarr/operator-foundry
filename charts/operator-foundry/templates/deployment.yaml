@@ -35,6 +35,9 @@ spec:
         args:
         - --health-probe-bind-address={{ .Values.healthProbeBindAddress }}
         - --enable-http2={{ .Values.enableHTTP2 }}
+{{- if gt (len .Values.watchNamespaces) 0 }}
+        - --watch-namespaces={{ join "," .Values.watchNamespaces }}
+{{- end }}
 {{- if .Values.leaderElection }}
         - --leader-elect=true
 {{- end }}

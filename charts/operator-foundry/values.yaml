@@ -13,6 +13,15 @@ leaderElection: true
 enableHTTP2: false
 healthProbeBindAddress: ":8081"
 
+# Empty watches all namespaces. A non-empty list scopes the manager cache and
+# binds manager permissions only in these namespaces.
+watchNamespaces: []
+
+# An unbound role tenants may receive through per-namespace RoleBindings. It
+# excludes PatternConnections and Secrets, which remain platform-owned.
+tenantAuthorRole:
+  create: true
+
 metrics:
   enabled: true
   secure: true

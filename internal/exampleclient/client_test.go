@@ -108,6 +108,60 @@ func TestClientSupportsHealthCreateUpdateAndDelete(t *testing.T) {
 	}
 }
 
+func TestClientEnsuresAndDeletesOnlyRequestedMembership(t *testing.T) {
+	memberships := map[string]Membership{}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPut && request.Method != http.MethodDelete {
+			http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		key := strings.TrimPrefix(request.URL.Path, "/memberships/")
+		if request.Method == http.MethodPut {
+			var membership Membership
+			if err := json.NewDecoder(request.Body).Decode(&membership); err != nil {
+				t.Errorf("decode membership: %v", err)
+				writer.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if key != MembershipKey(membership.ParentID, membership.MemberID) {
+				t.Errorf("membership key %q does not match request %#v", key, membership)
+				writer.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			memberships[key] = membership
+			writer.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if _, exists := memberships[key]; !exists {
+			http.NotFound(writer, request)
+			return
+		}
+		delete(memberships, key)
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "test-token", time.Second)
+	if err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	if err := client.EnsureMembership(context.Background(), "parent-id", "member-id"); err != nil {
+		t.Fatalf("ensure membership: %v", err)
+	}
+	if err := client.EnsureMembership(context.Background(), "parent-id", "other-member-id"); err != nil {
+		t.Fatalf("ensure unrelated membership: %v", err)
+	}
+	if err := client.DeleteMembership(context.Background(), "parent-id", "member-id"); err != nil {
+		t.Fatalf("delete membership: %v", err)
+	}
+	if _, exists := memberships[MembershipKey("parent-id", "member-id")]; exists {
+		t.Fatal("requested membership still exists")
+	}
+	if _, exists := memberships[MembershipKey("parent-id", "other-member-id")]; !exists {
+		t.Fatal("deleting one membership removed an unrelated edge")
+	}
+}
+
 func TestClientReportsExternalErrors(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "upstream failed", http.StatusBadGateway)

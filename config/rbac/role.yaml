@@ -24,6 +24,7 @@ rules:
   - patterns.operator-foundry.example
   resources:
   - patternconnections/status
+  - patternmemberships/status
   - patternresources/status
   verbs:
   - get
@@ -32,6 +33,7 @@ rules:
 - apiGroups:
   - patterns.operator-foundry.example
   resources:
+  - patternmemberships
   - patternresources
   verbs:
   - get
@@ -41,6 +43,7 @@ rules:
 - apiGroups:
   - patterns.operator-foundry.example
   resources:
+  - patternmemberships/finalizers
   - patternresources/finalizers
   verbs:
   - update

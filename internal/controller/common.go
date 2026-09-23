@@ -28,8 +28,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	patternsv1alpha1 "github.com/winrarr/operator-foundry/api/patterns/v1alpha1"
 	"github.com/winrarr/operator-foundry/internal/exampleclient"
@@ -44,12 +46,20 @@ const (
 	ExternalRetry        = 30 * time.Second
 )
 
-type dependencyError struct{ message string }
+type dependencyError struct {
+	message string
+	cause   error
+}
 
 func (e *dependencyError) Error() string { return e.message }
+func (e *dependencyError) Unwrap() error { return e.cause }
 
 func newDependencyError(format string, args ...any) error {
 	return &dependencyError{message: fmt.Sprintf(format, args...)}
+}
+
+func newMissingDependencyError(cause error, format string, args ...any) error {
+	return &dependencyError{message: fmt.Sprintf(format, args...), cause: cause}
 }
 
 func isDependencyError(err error) bool {
@@ -139,6 +149,15 @@ func removeFinalizer(ctx context.Context, kubeClient client.Client, object clien
 	return kubeClient.Update(ctx, object)
 }
 
+func removeFinalizerAfterDependencyLoss(ctx context.Context, kubeClient client.Client, object client.Object, dependency string, err error) (ctrl.Result, error) {
+	var dependencyErr *dependencyError
+	if !apierrors.IsNotFound(err) && !(errors.As(err, &dependencyErr) && apierrors.IsNotFound(dependencyErr.cause)) {
+		return ctrl.Result{}, err
+	}
+	log.FromContext(ctx).Error(err, "releasing deletion finalizer because cleanup dependency is unavailable; external state may be orphaned", "dependency", dependency, "resource", client.ObjectKeyFromObject(object))
+	return ctrl.Result{}, removeFinalizer(ctx, kubeClient, object)
+}
+
 func externalName(name, configured string) string {
 	if strings.TrimSpace(configured) != "" {
 		return configured
@@ -163,7 +182,7 @@ func getConnection(ctx context.Context, kubeClient client.Client, namespace, nam
 	var connection patternsv1alpha1.PatternConnection
 	if err := kubeClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &connection); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, newDependencyError("PatternConnection %s/%s was not found", namespace, name)
+			return nil, newMissingDependencyError(err, "PatternConnection %s/%s was not found", namespace, name)
 		}
 		return nil, fmt.Errorf("get PatternConnection %s/%s: %w", namespace, name, err)
 	}
@@ -178,7 +197,7 @@ func externalClientForConnection(ctx context.Context, kubeClient client.Client, 
 	var secret corev1.Secret
 	if err := kubeClient.Get(ctx, types.NamespacedName{Name: connection.Spec.AuthSecretRef.Name, Namespace: connection.Namespace}, &secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, newDependencyError("authentication Secret %s/%s was not found", connection.Namespace, connection.Spec.AuthSecretRef.Name)
+			return nil, newMissingDependencyError(err, "authentication Secret %s/%s was not found", connection.Namespace, connection.Spec.AuthSecretRef.Name)
 		}
 		return nil, fmt.Errorf("get authentication Secret %s/%s: %w", connection.Namespace, connection.Spec.AuthSecretRef.Name, err)
 	}

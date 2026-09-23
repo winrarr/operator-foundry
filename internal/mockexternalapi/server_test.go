@@ -44,6 +44,41 @@ func TestServerSupportsReferenceClientLifecycle(t *testing.T) {
 	}
 }
 
+func TestServerKeepsMembershipEdgesIndependent(t *testing.T) {
+	server := httptest.NewServer(New().Handler())
+	defer server.Close()
+	client, err := exampleclient.New(server.URL, "test-token", 0)
+	if err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	if err := client.EnsureMembership(context.Background(), "parent-id", "member-id"); err != nil {
+		t.Fatalf("ensure membership: %v", err)
+	}
+	if err := client.EnsureMembership(context.Background(), "parent-id", "other-member-id"); err != nil {
+		t.Fatalf("ensure unrelated membership: %v", err)
+	}
+	if err := client.DeleteMembership(context.Background(), "parent-id", "member-id"); err != nil {
+		t.Fatalf("delete membership: %v", err)
+	}
+
+	response, err := server.Client().Get(server.URL + "/admin/memberships?parentID=parent-id&memberID=member-id")
+	if err != nil {
+		t.Fatalf("check deleted membership: %v", err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("deleted membership status = %s, want 404", response.Status)
+	}
+	response, err = server.Client().Get(server.URL + "/admin/memberships?parentID=parent-id&memberID=other-member-id")
+	if err != nil {
+		t.Fatalf("check unrelated membership: %v", err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("unrelated membership status = %s, want 200", response.Status)
+	}
+}
+
 func TestServerAdminSurfaceSeedsAndInjectsFailures(t *testing.T) {
 	server := httptest.NewServer(New().Handler())
 	defer server.Close()
