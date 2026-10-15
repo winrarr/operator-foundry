@@ -55,7 +55,7 @@ GOVULNCHECK ?= $(LOCALBIN)/govulncheck
 HUBBLE ?= $(LOCALBIN)/hubble
 
 # renovate: datasource=golang-version depName=go
-GO_TOOLCHAIN ?= go1.27.1
+GO_TOOLCHAIN ?= go1.27.2
 GO := GOTOOLCHAIN=$(GO_TOOLCHAIN) go
 GOFMT := $(shell GOTOOLCHAIN=$(GO_TOOLCHAIN) go env GOROOT)/bin/gofmt
 # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize
@@ -65,7 +65,7 @@ CONTROLLER_TOOLS_VERSION ?= v0.22.0
 # renovate: datasource=github-releases depName=elastic/crd-ref-docs
 CRD_REF_DOCS_VERSION ?= v0.3.0
 # renovate: datasource=github-releases depName=golangci/golangci-lint
-GOLANGCI_LINT_VERSION ?= v2.13.2
+GOLANGCI_LINT_VERSION ?= v2.14.0
 # renovate: datasource=github-releases depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.33.0
 # renovate: datasource=go depName=golang.org/x/vuln
